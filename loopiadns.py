@@ -22,7 +22,14 @@ import logging
 import time
 import urllib.request
 import xmlrpc.client
+import requests
 
+
+def send_notification(Config, message):
+  if "ntfy-token" in Config and "ntfy-url" in Config:
+    requests.post(Config["ntfy-url"],
+      data=message,
+      headers={"Authorization": f"Bearer {Config['ntfy-token']}"})
 
 def api_error():
   """Print a warning message because an error has occured"""
@@ -43,7 +50,8 @@ def del_excess(Config, zone_records):
         record['record_id'])
     num = num + 1
 
-  logging.info('Deleted {} unnecessary record(s)'.format(str(num)))
+  logging.info(f'Deleted {num} unnecessary record(s)')
+  send_notification(Config, f'Deleted {num} unnecessary record(s)')
 
 def get_ip():
   """Get public IP adress"""
@@ -64,11 +72,13 @@ def get_records(Config):
     # Quit if unable to authorize
     if 'AUTH_ERROR' in zone_records:
       logging.error('Your user information seems to be incorrect. Please edit this file and check your username and password.')
+      send_notification(Config, 'Your user information seems to be incorrect. Please edit this file and check your username and password.')
       quit(2)
 
     # Quit if API returns unknown error
     if 'UNKNOWN_ERROR' in zone_records:
       logging.error('API returned "UNKNOWN ERROR". This could mean that the requested (sub)domain does not exist in this account.')
+      send_notification(Config, 'API returned "UNKNOWN ERROR". This could mean that the requested (sub)domain does not exist in this account.')
       quit(3)
 
     # Can't connect to the API for other reasons
@@ -93,23 +103,20 @@ def add_record(Config, ip):
       new_record)
 
   if Config["subdomain"] == '@':
-    logging.info('{domain}: {status}. Added new record.'.format(
-      domain=Config["domain"],
-      status=status))
+    logging.info(f'{Config["domain"]}: {status}. Added new record.')
+    send_notification(Config, f'{Config["domain"]}: {status}. Added new record.')
   else:
-    logging.info('{subdomain}.{domain}: {status}. Added new record.'.format(
-      subdomain=Config["subdomain"],
-      domain=Config["domain"],
-      status=status))
+    logging.info(f'{Config["subdomain"]}.{Config["domain"]}: {status}. Added new record.')
+    send_notification(Config, f'{Config["subdomain"]}.{Config["domain"]}: {status}. Added new record.')
 
 def update_record(Config, new_ip, record):
   """Update current A record"""
 
   # Does the record need updating?
   if record['rdata'] != new_ip:
-    logging.info('IP address has changed from {old} to {new}'.format(
-      old=record['rdata'],
-      new=new_ip))
+    logging.info(f'IP address has changed from {record["rdata"]} to {new_ip}')
+    send_notification(Config, f'IP address has changed from {record["rdata"]} to {new_ip}')
+
     # Yes it does. Update it!
     new_record = {
       'priority': record['priority'],
@@ -128,14 +135,11 @@ def update_record(Config, new_ip, record):
           new_record)
 
       if Config["subdomain"] == '@':
-        logging.info('{domain}: {status}'.format(
-          domain=Config["domain"],
-          status=status))
+        logging.info(f'{Config["domain"]}: {status}')
+        send_notification(Config, f'{Config["domain"]}: {status}')
       else:
-        logging.info('{subdomain}.{domain}: {status}'.format(
-          subdomain=Config["subdomain"],
-          domain=Config["domain"],
-          status=status))
+        logging.info(f'{Config["subdomain"]}.{Config["domain"]}: {status}')
+        send_notification(Config, f'{Config["subdomain"]}.{Config["domain"]}: {status}')
 
     except:
       api_error()
