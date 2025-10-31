@@ -9,12 +9,12 @@ If you don't have an API user yet you can create one in the Customer Zone.
 For reasons of security you shouldn't add more permissions than necessary.
 
 The user requires the following permissions for this script to function:
-* getZoneRecords  - To find out which record to update
+* getZoneRecords    - To find out which record to update
 * updateZoneRecord  - To actually update the zone record
 
 The following permissions are optional but recommended:
 * removeZoneRecord  - If the zone has several A-records, this is necessary to remove all excess records.
-* addZoneRecord   - Necessary if the zone doesn't have any A-record at all.
+* addZoneRecord     - Necessary if the zone doesn't have any A-record at all.
 """
 
 import json
@@ -22,14 +22,59 @@ import logging
 import time
 import urllib.request
 import xmlrpc.client
+from collections import deque
+
 import requests
+
+
+class NotificationBuffer:
+  """Simple in-memory deque buffer for notifications."""
+  def __init__(self):
+    self.q = deque()
+
+  def enqueue(self, config, message):
+    self.q.append((config, message))
+
+  def flush(self):
+    try:
+      self._flush()
+    except Exception as e:
+      logging.warning(f'Notification flush encountered exception: {e}')
+
+  def _flush(self):
+    while self.q:
+      config, message = self.q[0]
+
+      url = config.get('ntfy-url')
+      token = config.get('ntfy-token')
+      if not url or not token:
+        logging.error('Missing ntfy configuration for notification, dropping message')
+        self.q.popleft()
+        continue
+
+      try:
+        resp = requests.post(url, data=message, headers={"Authorization": f"Bearer {token}"}, timeout=2)
+        if resp.ok:
+          # Only remove the message after a successful send
+          self.q.popleft()
+          continue
+        else:
+          logging.warning(f'Notification send failed (status {resp.status_code}), will retry later')
+          break
+
+      except Exception as e:
+        logging.warning(f'Notification exception: {e}; will retry later')
+        break
+
+
+# Global notification buffer instance
+_notification_buffer = NotificationBuffer()
 
 
 def send_notification(Config, message):
   if "ntfy-token" in Config and "ntfy-url" in Config:
-    requests.post(Config["ntfy-url"],
-      data=message,
-      headers={"Authorization": f"Bearer {Config['ntfy-token']}"})
+    _notification_buffer.enqueue(Config, message)
+    _notification_buffer.flush()
 
 def del_excess(Config, zone_records):
   """Remove all A records except the first one"""
@@ -139,11 +184,7 @@ def update_record(Config, new_ip, record):
       send_notification(Config, 'Error! Not sure why, sorry! Please check your internet connection and http://www.driftbloggen.se. Contact support@loopia.se if the problem persists.')
       quit(1)
 
-############
-### Main ###
-############
-
-def main(Config):
+def update_records(Config):
   # Get current A records and public IP address
   a_records = get_records(Config)
   new_ip = get_ip()
@@ -160,6 +201,10 @@ def main(Config):
     # Now let's update the record!
     update_record(Config, new_ip, a_records[0])
 
+############
+### Main ###
+############
+
 if __name__ == '__main__':
   logging.basicConfig(filename='loopiadns.log', level=logging.INFO, format='%(asctime)s: %(levelname)s [%(name)s] %(message)s')
 
@@ -175,5 +220,6 @@ if __name__ == '__main__':
 
   while True:
     for c in config:
-      main(c)
+      update_records(c)
+    _notification_buffer.flush()
     time.sleep(60*5)
