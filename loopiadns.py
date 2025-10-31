@@ -31,12 +31,6 @@ def send_notification(Config, message):
       data=message,
       headers={"Authorization": f"Bearer {Config['ntfy-token']}"})
 
-def api_error():
-  """Print a warning message because an error has occured"""
-
-  logging.error('Error! Not sure why, sorry! Please check your internet connection and http://www.driftbloggen.se. Contact support@loopia.se if the problem persists.')
-  quit(1)
-
 def del_excess(Config, zone_records):
   """Remove all A records except the first one"""
 
@@ -82,7 +76,9 @@ def get_records(Config):
       quit(3)
 
     # Can't connect to the API for other reasons
-    api_error()
+    logging.error('Error! Not sure why, sorry! Please check your internet connection and http://www.driftbloggen.se. Contact support@loopia.se if the problem persists.')
+    send_notification(Config, 'Error! Not sure why, sorry! Please check your internet connection and http://www.driftbloggen.se. Contact support@loopia.se if the problem persists.')
+    quit(1)
 
 
 def add_record(Config, ip):
@@ -114,9 +110,6 @@ def update_record(Config, new_ip, record):
 
   # Does the record need updating?
   if record['rdata'] != new_ip:
-    logging.info(f'IP address has changed from {record["rdata"]} to {new_ip}')
-    send_notification(Config, f'IP address has changed from {record["rdata"]} to {new_ip}')
-
     # Yes it does. Update it!
     new_record = {
       'priority': record['priority'],
@@ -135,14 +128,16 @@ def update_record(Config, new_ip, record):
           new_record)
 
       if Config["subdomain"] == '@':
-        logging.info(f'{Config["domain"]}: {status}')
-        send_notification(Config, f'{Config["domain"]}: {status}')
+        logging.info(f'IP address has changed from {record["rdata"]} to {new_ip}: {Config["domain"]}: {status}')
+        send_notification(Config, f'IP address has changed from {record["rdata"]} to {new_ip}: {Config["domain"]}: {status}')
       else:
-        logging.info(f'{Config["subdomain"]}.{Config["domain"]}: {status}')
-        send_notification(Config, f'{Config["subdomain"]}.{Config["domain"]}: {status}')
+        logging.info(f'IP address has changed from {record["rdata"]} to {new_ip}: {Config["subdomain"]}.{Config["domain"]}: {status}')
+        send_notification(Config, f'IP address has changed from {record["rdata"]} to {new_ip}: {Config["subdomain"]}.{Config["domain"]}: {status}')
 
     except:
-      api_error()
+      logging.error('Error! Not sure why, sorry! Please check your internet connection and http://www.driftbloggen.se. Contact support@loopia.se if the problem persists.')
+      send_notification(Config, 'Error! Not sure why, sorry! Please check your internet connection and http://www.driftbloggen.se. Contact support@loopia.se if the problem persists.')
+      quit(1)
 
 ############
 ### Main ###
